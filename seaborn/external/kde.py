@@ -203,7 +203,27 @@ class gaussian_kde:
                      the dimensionality of the KDE.
 
         """
-        pass
+        points = atleast_2d(asarray(points))
+
+        d, m = points.shape
+        if d != self.d:
+            if d == 1 and m == self.d:
+                # points was passed in as a row vector
+                points = reshape(points, (self.d, 1))
+                m = 1
+            else:
+                raise ValueError("points have dimension %s, dataset has dimension %s" % (d, self.d))
+
+        # compute the normalised residuals
+        chi2 = dot(self.inv_cov, (points - self.dataset))
+        energy = sum(chi2 * (points - self.dataset), axis=0) / 2.0
+
+        result = power(2 * pi, -self.d / 2.0) * sqrt(linalg.det(self.inv_cov))
+        result *= exp(-energy)
+
+        result = sum(result * self.weights, axis=1)
+
+        return result / self._norm_factor
     __call__ = evaluate
 
     def scotts_factor(self):
@@ -214,7 +234,7 @@ class gaussian_kde:
         s : float
             Scott's factor.
         """
-        pass
+        return power(self.neff, -1./(self.d+4))
 
     def silverman_factor(self):
         """Compute the Silverman factor.
@@ -224,7 +244,7 @@ class gaussian_kde:
         s : float
             The silverman factor.
         """
-        pass
+        return power(self.neff * (self.d + 2.0) / 4.0, -1. / (self.d + 4))
     covariance_factor = scotts_factor
     covariance_factor.__doc__ = 'Computes the coefficient (`kde.factor`) that\n        multiplies the data covariance matrix to obtain the kernel covariance\n        matrix. The default is `scotts_factor`.  A subclass can overwrite this\n        method to provide a different method, or set it through a call to\n        `kde.set_bandwidth`.'
 
@@ -249,13 +269,40 @@ class gaussian_kde:
         .. versionadded:: 0.11
 
         """
-        pass
+        if bw_method is None:
+            pass
+        elif bw_method == 'scott':
+            self.covariance_factor = self.scotts_factor
+        elif bw_method == 'silverman':
+            self.covariance_factor = self.silverman_factor
+        elif np.isscalar(bw_method) and not isinstance(bw_method, str):
+            self._bw_method = 'use constant'
+            self.covariance_factor = lambda: bw_method
+        elif callable(bw_method):
+            self._bw_method = bw_method
+            self.covariance_factor = lambda: self._bw_method(self)
+        else:
+            msg = "`bw_method` should be 'scott', 'silverman', a scalar " \
+                  "or a callable."
+            raise ValueError(msg)
+
+        self._compute_covariance()
 
     def _compute_covariance(self):
         """Computes the covariance matrix for each Gaussian kernel using
         covariance_factor().
         """
-        pass
+        self.factor = self.covariance_factor()
+        # Cache covariance and inverse covariance of the data
+        if not hasattr(self, '_data_inv_cov'):
+            self._data_covariance = atleast_2d(cov(self.dataset, rowvar=1,
+                                               bias=False,
+                                               aweights=self.weights))
+            self._data_inv_cov = linalg.inv(self._data_covariance)
+
+        self.covariance = self._data_covariance * self.factor**2
+        self.inv_cov = self._data_inv_cov / self.factor**2
+        self._norm_factor = sqrt(linalg.det(2*pi*self.covariance)) * self.n
 
     def pdf(self, x):
         """
@@ -267,4 +314,4 @@ class gaussian_kde:
         docstring for more details.
 
         """
-        pass
+        return self.evaluate(x)
