@@ -94,23 +94,62 @@ class KDE(Stat):
 
     def _check_var_list_or_boolean(self, param: str, grouping_vars: Any) -> None:
         """Do input checks on grouping parameters."""
-        pass
+        value = getattr(self, param)
+        if not isinstance(value, (bool, list)):
+            raise TypeError(f"The `{param}` parameter must be a boolean or list of variables, not {type(value).__name__}")
+        if isinstance(value, list):
+            invalid_vars = set(value) - set(grouping_vars)
+            if invalid_vars:
+                raise ValueError(f"The following variables in `{param}` are not valid grouping variables: {', '.join(invalid_vars)}")
 
     def _fit(self, data: DataFrame, orient: str) -> gaussian_kde:
         """Fit and return a KDE object."""
-        pass
+        x = data[orient].to_numpy()
+        weights = data["weight"].to_numpy() if "weight" in data else None
+        return gaussian_kde(x, bw_method=self.bw_method, weights=weights)
 
     def _get_support(self, data: DataFrame, orient: str) -> ndarray:
         """Define the grid that the KDE will be evaluated on."""
-        pass
+        x = data[orient]
+        if self.gridsize is None:
+            return x.to_numpy()
+        
+        bw = self._fit(data, orient).factor
+        xmin, xmax = x.min(), x.max()
+        range_extent = xmax - xmin
+        
+        gridmin = xmin - self.cut * bw * range_extent
+        gridmax = xmax + self.cut * bw * range_extent
+        
+        return np.linspace(gridmin, gridmax, self.gridsize)
 
     def _fit_and_evaluate(self, data: DataFrame, orient: str, support: ndarray) -> DataFrame:
         """Transform single group by fitting a KDE and evaluating on a support grid."""
-        pass
+        kde = self._fit(data, orient)
+        density = kde(support)
+        
+        if self.cumulative:
+            density = np.cumsum(density) / np.sum(density)
+        
+        return pd.DataFrame({orient: support, "density": density})
 
     def _transform(self, data: DataFrame, orient: str, grouping_vars: list[str]) -> DataFrame:
         """Transform multiple groups by fitting KDEs and evaluating."""
-        pass
+        support = self._get_support(data, orient)
+        
+        if not grouping_vars:
+            return self._fit_and_evaluate(data, orient, support)
+        
+        groups = data.groupby(grouping_vars)
+        densities = []
+        
+        for _, group_data in groups:
+            group_density = self._fit_and_evaluate(group_data, orient, support)
+            for var, val in zip(grouping_vars, group_data[grouping_vars].iloc[0]):
+                group_density[var] = val
+            densities.append(group_density)
+        
+        return pd.concat(densities, ignore_index=True)
 
     def __call__(self, data: DataFrame, groupby: GroupBy, orient: str, scales: dict[str, Scale]) -> DataFrame:
         if 'weight' not in data:
