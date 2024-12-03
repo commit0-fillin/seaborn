@@ -38,7 +38,16 @@ import sys
 
 def strip_blank_lines(l):
     """Remove leading and trailing blank lines from a list of lines"""
-    pass
+    start = 0
+    end = len(l)
+    
+    while start < end and not l[start].strip():
+        start += 1
+    
+    while end > start and not l[end - 1].strip():
+        end -= 1
+    
+    return l[start:end]
 
 class Reader:
     """A line-based string reader.
@@ -124,7 +133,31 @@ class NumpyDocString(Mapping):
         func_name1, func_name2, :meth:`func_name`, func_name3
 
         """
-        pass
+        result = []
+        current_func = None
+        current_desc = []
+
+        for line in content:
+            line = line.strip()
+            if not line:
+                continue
+
+            match = self._func_rgx.match(line)
+            if match:
+                if current_func:
+                    result.append((current_func, ' '.join(current_desc)))
+                current_func = match.group('name') or match.group('name2')
+                current_desc = []
+                rest = line[match.end():].strip()
+                if rest and rest[0] == ':':
+                    current_desc = [rest[1:].strip()]
+            elif current_func:
+                current_desc.append(line)
+
+        if current_func:
+            result.append((current_func, ' '.join(current_desc)))
+
+        return result
 
     def _parse_index(self, section, content):
         """
@@ -132,11 +165,36 @@ class NumpyDocString(Mapping):
            :refguide: something, else, and more
 
         """
-        pass
+        result = {}
+        for line in content:
+            line = line.strip()
+            if line.startswith(':'):
+                key, value = line[1:].split(':', 1)
+                key = key.strip()
+                value = value.strip()
+                result[key] = [x.strip() for x in value.split(',')]
+        return result
 
     def _parse_summary(self):
         """Grab signature (if given) and summary"""
-        pass
+        if self._is_at_section():
+            return
+
+        # If several signatures present, take the last one
+        while True:
+            summary = self._doc.read_to_next_empty_line()
+            summary_str = " ".join([s.strip() for s in summary]).strip()
+            if re.compile('^([\w., ]+=)?\s*[\w\.]+\(.*\)$').search(summary_str):
+                self['Signature'] = summary_str
+                if not self._is_at_section():
+                    continue
+            break
+
+        if summary is not None:
+            self['Summary'] = summary
+
+        if not self._is_at_section():
+            self['Extended Summary'] = self._read_to_next_section()
 
     def __str__(self, func_role=''):
         out = []
@@ -156,7 +214,14 @@ class NumpyDocString(Mapping):
 
 def dedent_lines(lines):
     """Deindent a list of lines maximally"""
-    pass
+    if not lines:
+        return lines
+
+    # Find the minimum indentation (ignore blank lines)
+    min_indent = min(len(line) - len(line.lstrip()) for line in lines if line.strip())
+
+    # Remove the minimum indentation from each line
+    return [line[min_indent:] if line.strip() else line for line in lines]
 
 class FunctionDoc(NumpyDocString):
 
@@ -225,7 +290,11 @@ class ClassDoc(NumpyDocString):
                 if not s:
                     return []
                 else:
-                    return s.splitlines()
+                    # Split the string into lines and remove any trailing empty lines
+                    lines = s.splitlines()
+                    while lines and not lines[-1].strip():
+                        lines.pop()
+                    return lines
             for field, items in [('Methods', self.methods), ('Attributes', self.properties)]:
                 if not self[field]:
                     doc_list = []
