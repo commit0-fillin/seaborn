@@ -54,7 +54,36 @@ def variable_type(vector: Series, boolean_type: Literal['numeric', 'categorical'
     var_type : 'numeric', 'categorical', or 'datetime'
         Name identifying the type of data in the vector.
     """
-    pass
+    # Convert input to pandas Series if it's not already
+    if not isinstance(vector, pd.Series):
+        vector = pd.Series(vector)
+
+    # Check for datetime type
+    if pd.api.types.is_datetime64_any_dtype(vector):
+        return VarType('datetime')
+
+    # Check for boolean type
+    if strict_boolean:
+        if pd.api.types.is_bool_dtype(vector) or pd.api.types.is_extension_array_dtype(vector, "boolean"):
+            return VarType(boolean_type)
+    else:
+        if set(vector.dropna().unique()) <= {0, 1}:
+            return VarType(boolean_type)
+
+    # Check for numeric type
+    if pd.api.types.is_numeric_dtype(vector):
+        return VarType('numeric')
+
+    # Check if all values are numeric (for object dtypes)
+    if vector.dtype == object:
+        try:
+            pd.to_numeric(vector, errors='raise')
+            return VarType('numeric')
+        except (ValueError, TypeError):
+            pass
+
+    # If none of the above, it's categorical
+    return VarType('categorical')
 
 def categorical_order(vector: Series, order: list | None=None) -> list:
     """
@@ -74,4 +103,25 @@ def categorical_order(vector: Series, order: list | None=None) -> list:
         Ordered list of category levels not including null values.
 
     """
-    pass
+    if order is not None:
+        # Remove any categories specified in the order that are not in the data
+        order = [o for o in order if o in vector.dropna().unique()]
+    else:
+        if hasattr(vector, "categories"):
+            # If it's already a Categorical type, use its categories
+            order = vector.categories.tolist()
+        else:
+            # Get unique values, excluding NaN
+            unique_values = vector.dropna().unique()
+
+            if variable_type(vector) == "numeric":
+                # For numeric data, sort in ascending order
+                order = sorted(unique_values)
+            elif pd.api.types.is_datetime64_any_dtype(vector):
+                # For datetime data, sort chronologically
+                order = sorted(unique_values)
+            else:
+                # For other types (assumed to be strings), sort alphabetically
+                order = sorted(unique_values, key=lambda x: str(x))
+
+    return order
