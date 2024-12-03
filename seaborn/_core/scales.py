@@ -128,11 +128,43 @@ class Nominal(Scale):
 
 @dataclass
 class Ordinal(Scale):
-    ...
+    """
+    A categorical scale with a meaningful order.
+    """
+    values: tuple | str | list | dict | None = None
+    order: list | None = None
+    _priority: ClassVar[int] = 5
+
+    def __post_init__(self):
+        super().__post_init__()
+        self._pipeline = [self._order_categories]
+
+    def _order_categories(self, data):
+        if self.order is not None:
+            return pd.Categorical(data, categories=self.order, ordered=True)
+        elif self.values is not None:
+            return pd.Categorical(data, categories=self.values, ordered=True)
+        else:
+            return pd.Categorical(data, ordered=True)
 
 @dataclass
 class Discrete(Scale):
-    ...
+    """
+    A scale for discrete numeric data.
+    """
+    values: tuple | str | list | dict | None = None
+    _priority: ClassVar[int] = 6
+
+    def __post_init__(self):
+        super().__post_init__()
+        self._pipeline = [self._discretize]
+
+    def _discretize(self, data):
+        if self.values is not None:
+            return pd.cut(data, bins=self.values, labels=self.values[:-1], include_lowest=True)
+        else:
+            unique_values = np.sort(np.unique(data))
+            return pd.cut(data, bins=unique_values, labels=unique_values[:-1], include_lowest=True)
 
 @dataclass
 class ContinuousBase(Scale):
