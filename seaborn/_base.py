@@ -24,11 +24,19 @@ class SemanticMapping:
 
     def _check_list_length(self, levels, values, variable):
         """Input check when values are provided as a list."""
-        pass
+        if len(values) != len(levels):
+            err = f"The {variable} list has {len(values)} values but there are {len(levels)} {variable} levels"
+            raise ValueError(err)
 
     def _lookup_single(self, key):
         """Apply the mapping to a single data value."""
-        pass
+        try:
+            return self.lookup_table[key]
+        except KeyError:
+            if self.map_type == "numeric":
+                return self.cmap(self.norm(key))
+            else:
+                return None
 
     def __call__(self, key, *args, **kwargs):
         """Get the attribute(s) values for the data key."""
@@ -82,19 +90,78 @@ class HueMapping(SemanticMapping):
 
     def _lookup_single(self, key):
         """Get the color for a single value, using colormap to interpolate."""
-        pass
+        try:
+            return self.lookup_table[key]
+        except KeyError:
+            if self.map_type == "numeric" and self.cmap is not None:
+                return self.cmap(self.norm(key))
+            else:
+                return None
 
     def infer_map_type(self, palette, norm, input_format, var_type):
         """Determine how to implement the mapping."""
-        pass
+        if isinstance(palette, dict):
+            return "categorical"
+        elif norm is not None:
+            return "numeric"
+        elif var_type == "numeric":
+            return "numeric"
+        else:
+            return "categorical"
 
     def categorical_mapping(self, data, palette, order):
         """Determine colors when the hue mapping is categorical."""
-        pass
+        levels = categorical_order(data, order)
+        n_colors = len(levels)
+
+        if isinstance(palette, dict):
+            missing = set(levels) - set(palette)
+            if any(missing):
+                err = f"The palette dictionary is missing {missing}"
+                raise ValueError(err)
+            lookup_table = palette
+        else:
+            if palette is None:
+                if n_colors <= len(QUAL_PALETTES['deep']):
+                    colors = QUAL_PALETTES['deep']
+                else:
+                    colors = color_palette('husl', n_colors)
+            else:
+                colors = color_palette(palette, n_colors)
+            lookup_table = dict(zip(levels, colors))
+
+        return levels, lookup_table
 
     def numeric_mapping(self, data, palette, norm):
         """Determine colors when the hue variable is quantitative."""
-        pass
+        levels = remove_na(data)
+        if not levels.size:
+            return [], {}
+
+        if norm is None:
+            norm = mpl.colors.Normalize()
+        elif isinstance(norm, tuple):
+            norm = mpl.colors.Normalize(*norm)
+        elif not isinstance(norm, mpl.colors.Normalize):
+            err = "``norm`` must be None, tuple, or Normalize object."
+            raise ValueError(err)
+
+        if palette is None:
+            cmap = mpl.cm.rocket
+        elif isinstance(palette, str):
+            cmap = mpl.cm.get_cmap(palette)
+        elif isinstance(palette, mpl.colors.Colormap):
+            cmap = palette
+        else:
+            err = "``palette`` must be None, string, or Colormap object."
+            raise ValueError(err)
+
+        norm.clip = True
+        if not norm.scaled():
+            norm(np.asarray(levels))
+
+        lookup_table = dict(zip(levels, cmap(norm(levels))))
+        return levels, lookup_table, norm, cmap
 
 class SizeMapping(SemanticMapping):
     """Mapping that sets artist sizes according to data values."""
@@ -170,11 +237,36 @@ class StyleMapping(SemanticMapping):
 
     def _lookup_single(self, key, attr=None):
         """Get attribute(s) for a given data point."""
-        pass
+        try:
+            value = self.lookup_table[key]
+        except KeyError:
+            value = {}
+
+        if attr is None:
+            return value
+        elif attr in value:
+            return value[attr]
+        else:
+            return None
 
     def _map_attributes(self, arg, levels, defaults, attr):
         """Handle the specification for a given style attribute."""
-        pass
+        if arg is None:
+            return dict(zip(levels, defaults))
+        elif isinstance(arg, dict):
+            missing = set(levels) - set(arg)
+            if any(missing):
+                err = f"These `{attr}` levels are missing {missing}"
+                raise ValueError(err)
+            return arg
+        elif isinstance(arg, Iterable) and not isinstance(arg, str):
+            if len(arg) != len(levels):
+                err = f"The `{attr}` list has {len(arg)} values but there are {len(levels)} levels"
+                raise ValueError(err)
+            return dict(zip(levels, arg))
+        else:
+            err = f"`{attr}` must be a dictionary or a list of values"
+            raise ValueError(err)
 
 class VectorPlotter:
     """Base class for objects underlying *plot functions."""
@@ -193,7 +285,7 @@ class VectorPlotter:
     @property
     def has_xy_data(self):
         """Return True at least one of x or y is defined."""
-        pass
+        return bool(self.plot_data.get("x") is not None or self.plot_data.get("y") is not None)
 
     @property
     def var_levels(self):
@@ -208,7 +300,12 @@ class VectorPlotter:
         tracking plot variables.
 
         """
-        pass
+        for var in ["hue", "size", "style"]:
+            if hasattr(self, f"{var}_map"):
+                mapper = getattr(self, f"{var}_map")
+                if mapper.levels is not None:
+                    self._var_levels[var] = list(mapper.levels)
+        return self._var_levels
 
     def assign_variables(self, data=None, variables={}):
         """Define plot variables, optionally using lookup from `data`."""
