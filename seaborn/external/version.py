@@ -163,4 +163,19 @@ def _parse_local_version(local: str) -> Optional[LocalType]:
     """
     Takes a string like abc.1.twelve and turns it into ("abc", 1, "twelve").
     """
-    pass
+    if local is None:
+        return None
+    
+    components = []
+    for part in _local_version_separators.split(local):
+        if not part:
+            continue
+        try:
+            components.append(int(part))
+        except ValueError:
+            components.append(part)
+    
+    if not components:
+        return None
+    
+    return tuple(components)
