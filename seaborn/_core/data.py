@@ -62,7 +62,23 @@ class PlotData:
 
     def join(self, data: DataSource, variables: dict[str, VariableSpec] | None) -> PlotData:
         """Add, replace, or drop variables and return as a new dataset."""
-        pass
+        new_data = handle_data_source(data)
+        new_frame, new_names, new_ids = self._assign_variables(new_data, variables or {})
+        
+        # Combine the existing and new data
+        combined_frame = pd.concat([self.frame, new_frame], axis=1)
+        combined_names = {**self.names, **new_names}
+        combined_ids = {**self.ids, **new_ids}
+        
+        # Create a new PlotData instance
+        new_plot_data = PlotData(combined_frame, {})
+        new_plot_data.frame = combined_frame
+        new_plot_data.names = combined_names
+        new_plot_data.ids = combined_ids
+        new_plot_data.source_data = {**self.source_data, **new_data} if isinstance(self.source_data, dict) else new_data
+        new_plot_data.source_vars = {**self.source_vars, **(variables or {})}
+        
+        return new_plot_data
 
     def _assign_variables(self, data: DataFrame | Mapping | None, variables: dict[str, VariableSpec]) -> tuple[DataFrame, dict[str, str | None], dict[str, str | int]]:
         """
@@ -98,12 +114,64 @@ class PlotData:
             non-indexed vector datatypes that have a different length from `data`.
 
         """
-        pass
+        if data is None and not variables:
+            return pd.DataFrame(), {}, {}
+
+        if not isinstance(data, (pd.DataFrame, Mapping)) and data is not None:
+            raise TypeError("Data must be a DataFrame or Mapping")
+
+        frame = pd.DataFrame()
+        names = {}
+        ids = {}
+
+        for var_name, var_spec in variables.items():
+            if isinstance(var_spec, str):
+                if data is None or var_spec not in data:
+                    raise ValueError(f"Variable '{var_spec}' not found in data")
+                frame[var_name] = data[var_spec]
+                names[var_name] = var_spec
+                ids[var_name] = id(data[var_spec])
+            else:
+                try:
+                    series = pd.Series(var_spec, name=var_name)
+                    if data is not None and len(series) != len(data):
+                        raise ValueError(f"Length of {var_name} does not match length of data")
+                    frame[var_name] = series
+                    names[var_name] = getattr(var_spec, 'name', None)
+                    ids[var_name] = id(var_spec)
+                except Exception as e:
+                    raise ValueError(f"Could not convert {var_name} to a Series: {str(e)}")
+
+        return frame, names, ids
 
 def handle_data_source(data: object) -> pd.DataFrame | Mapping | None:
     """Convert the data source object to a common union representation."""
-    pass
+    if data is None:
+        return None
+    elif isinstance(data, pd.DataFrame):
+        return data
+    elif isinstance(data, Mapping):
+        return data
+    elif isinstance(data, np.ndarray):
+        return pd.DataFrame(data)
+    elif hasattr(data, '__dataframe__'):  # Check for DataFrame interchange protocol
+        return convert_dataframe_to_pandas(data)
+    else:
+        try:
+            return pd.DataFrame(data)
+        except Exception:
+            raise TypeError(f"Could not convert data of type {type(data)} to DataFrame or Mapping")
 
 def convert_dataframe_to_pandas(data: object) -> pd.DataFrame:
     """Use the DataFrame exchange protocol, or fail gracefully."""
-    pass
+    try:
+        df_protocol = data.__dataframe__()
+        if hasattr(df_protocol, 'to_pandas'):
+            return df_protocol.to_pandas()
+        else:
+            # Fallback to manual conversion if to_pandas() is not available
+            columns = [col.name for col in df_protocol.columns()]
+            data_dict = {col: df_protocol.get_column(col).to_numpy() for col in columns}
+            return pd.DataFrame(data_dict)
+    except Exception as e:
+        raise ValueError(f"Failed to convert data using DataFrame exchange protocol: {str(e)}")
