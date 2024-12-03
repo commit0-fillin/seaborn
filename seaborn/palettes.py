@@ -30,69 +30,81 @@ class _ColorPalette(list):
 
     def as_hex(self):
         """Return a color palette with hex codes instead of RGB values."""
-        pass
+        return [mpl.colors.rgb2hex(rgb) for rgb in self]
 
     def _repr_html_(self):
         """Rich display of the color palette in an HTML frontend."""
-        pass
+        s = '<div style="display: flex; justify-content: center;">'
+        for color in self:
+            hex_color = mpl.colors.rgb2hex(color)
+            s += f'<div style="width: 30px; height: 30px; margin: 5px; background-color: {hex_color};"></div>'
+        s += '</div>'
+        return s
 
 def _patch_colormap_display():
     """Simplify the rich display of matplotlib color maps in a notebook."""
-    pass
+    from matplotlib.colors import Colormap
+    
+    def _repr_png_(self):
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        
+        fig = Figure(figsize=(6, 1))
+        ax = fig.add_subplot(111)
+        ax.imshow([np.linspace(0, 1, 256)], aspect='auto', cmap=self)
+        ax.set_axis_off()
+        canvas = FigureCanvasAgg(fig)
+        canvas.draw()
+        data = np.frombuffer(canvas.buffer_rgba(), dtype=np.uint8)
+        w, h = canvas.get_width_height()
+        return data.reshape((h, w, 4))
+
+    Colormap._repr_png_ = _repr_png_
 
 def color_palette(palette=None, n_colors=None, desat=None, as_cmap=False):
-    """Return a list of colors or continuous colormap defining a palette.
+    """Return a list of colors or continuous colormap defining a palette."""
+    if palette is None:
+        palette = get_color_cycle()
+    elif isinstance(palette, str):
+        if palette.lower() in SEABORN_PALETTES:
+            palette = SEABORN_PALETTES[palette.lower()]
+        elif palette.lower() in MPL_QUAL_PALS:
+            palette = mpl_palette(palette, n_colors)
+        elif palette in ['hls', 'husl']:
+            func = hls_palette if palette == 'hls' else husl_palette
+            palette = func(n_colors)
+        elif palette.startswith('ch:'):
+            palette = cubehelix_palette(n_colors, **_parse_cubehelix_args(palette))
+        elif palette.startswith(('light:', 'dark:', 'blend:')):
+            func_name, color_spec = palette.split(':')
+            func = {'light': light_palette,
+                    'dark': dark_palette,
+                    'blend': blend_palette}[func_name]
+            palette = func(color_spec, n_colors=n_colors)
+        else:
+            try:
+                palette = mpl.cm.get_cmap(palette)
+            except ValueError:
+                raise ValueError(f"'{palette}' is not a valid palette name")
 
-    Possible ``palette`` values include:
-        - Name of a seaborn palette (deep, muted, bright, pastel, dark, colorblind)
-        - Name of matplotlib colormap
-        - 'husl' or 'hls'
-        - 'ch:<cubehelix arguments>'
-        - 'light:<color>', 'dark:<color>', 'blend:<color>,<color>',
-        - A sequence of colors in any format matplotlib accepts
+    if isinstance(palette, mpl.colors.Colormap):
+        if as_cmap:
+            return palette
+        else:
+            palette = palette(np.linspace(0, 1, n_colors))
 
-    Calling this function with ``palette=None`` will return the current
-    matplotlib color cycle.
+    palette = list(palette)
 
-    This function can also be used in a ``with`` statement to temporarily
-    set the color cycle for a plot or set of plots.
+    if n_colors is None:
+        n_colors = len(palette)
 
-    See the :ref:`tutorial <palette_tutorial>` for more information.
+    if desat is not None:
+        palette = [desaturate(c, desat) for c in palette]
 
-    Parameters
-    ----------
-    palette : None, string, or sequence, optional
-        Name of palette or None to return current palette. If a sequence, input
-        colors are used but possibly cycled and desaturated.
-    n_colors : int, optional
-        Number of colors in the palette. If ``None``, the default will depend
-        on how ``palette`` is specified. Named palettes default to 6 colors,
-        but grabbing the current palette or passing in a list of colors will
-        not change the number of colors unless this is specified. Asking for
-        more colors than exist in the palette will cause it to cycle. Ignored
-        when ``as_cmap`` is True.
-    desat : float, optional
-        Proportion to desaturate each color by.
-    as_cmap : bool
-        If True, return a :class:`matplotlib.colors.ListedColormap`.
+    if as_cmap:
+        return mpl.colors.ListedColormap(palette)
 
-    Returns
-    -------
-    list of RGB tuples or :class:`matplotlib.colors.ListedColormap`
-
-    See Also
-    --------
-    set_palette : Set the default color cycle for all plots.
-    set_color_codes : Reassign color codes like ``"b"``, ``"g"``, etc. to
-                      colors from one of the seaborn palettes.
-
-    Examples
-    --------
-
-    .. include:: ../docstrings/color_palette.rst
-
-    """
-    pass
+    return _ColorPalette(cycler(palette, n_colors))
 
 def hls_palette(n_colors=6, h=0.01, l=0.6, s=0.65, as_cmap=False):
     """
