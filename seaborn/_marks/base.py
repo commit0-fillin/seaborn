@@ -60,12 +60,21 @@ class Mappable:
     @property
     def depend(self) -> Any:
         """Return the name of the feature to source a default value from."""
-        pass
+        return self._depend
 
     @property
     def default(self) -> Any:
         """Get the default value for this feature, or access the relevant rcParam."""
-        pass
+        if self._val is not None:
+            return self._val
+        elif self._rc is not None:
+            return mpl.rcParams[self._rc]
+        elif self._depend is not None:
+            return None  # This will be resolved later when the dependent feature is known
+        elif self._auto:
+            return None  # This will be resolved later based on other parameters
+        else:
+            return None  # No default value set
 MappableBool = Union[bool, Mappable]
 MappableString = Union[str, Mappable]
 MappableFloat = Union[float, Mappable]
@@ -97,11 +106,32 @@ class Mark:
             of values with matching length).
 
         """
-        pass
+        if name in data:
+            if isinstance(data, dict):
+                return data[name]
+            elif isinstance(data, DataFrame):
+                if scales and name in scales:
+                    scale = scales[name]
+                    return scale(data[name])
+                else:
+                    return data[name]
+        elif hasattr(self, name):
+            value = getattr(self, name)
+            if isinstance(value, Mappable):
+                return value.default
+            else:
+                return value
+        else:
+            raise ValueError(f"Unable to resolve value for feature '{name}'")
 
     def _plot(self, split_generator: Callable[[], Generator], scales: dict[str, Scale], orient: str) -> None:
         """Main interface for creating a plot."""
-        pass
+        for subset in split_generator():
+            self._draw(subset, scales, orient)
+
+    def _draw(self, subset: DataFrame, scales: dict[str, Scale], orient: str) -> None:
+        """Draw a subset of the data."""
+        raise NotImplementedError("Subclasses must implement the _draw method.")
 
 def resolve_color(mark: Mark, data: DataFrame | dict, prefix: str='', scales: dict[str, Scale] | None=None) -> RGBATuple | ndarray:
     """
@@ -124,4 +154,23 @@ def resolve_color(mark: Mark, data: DataFrame | dict, prefix: str='', scales: di
         Support "color", "fillcolor", etc.
 
     """
-    pass
+    color_name = f"{prefix}color"
+    alpha_name = f"{prefix}alpha"
+
+    color = mark._resolve(data, color_name, scales)
+    alpha = mark._resolve(data, alpha_name, scales)
+
+    if isinstance(color, str) or (isinstance(color, tuple) and len(color) in (3, 4)):
+        rgba = to_rgba(color)
+    elif isinstance(color, np.ndarray):
+        rgba = to_rgba_array(color)
+    else:
+        raise ValueError(f"Invalid color specification: {color}")
+
+    if alpha is not None:
+        if isinstance(rgba, np.ndarray):
+            rgba[..., -1] = alpha
+        else:
+            rgba = rgba[:3] + (alpha,)
+
+    return rgba
