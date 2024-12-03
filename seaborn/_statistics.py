@@ -77,31 +77,66 @@ class KDE:
 
     def _define_support_grid(self, x, bw, cut, clip, gridsize):
         """Create the grid of evaluation points depending for vector x."""
-        pass
+        if isinstance(clip, tuple) and len(clip) == 2:
+            support_min, support_max = clip
+        else:
+            support_min, support_max = x.min() - bw * cut, x.max() + bw * cut
+
+        if support_min > support_max:
+            raise ValueError("KDE cannot be evaluated with the provided parameters.")
+
+        return np.linspace(support_min, support_max, gridsize)
 
     def _define_support_univariate(self, x, weights):
         """Create a 1D grid of evaluation points."""
-        pass
+        grid = self._define_support_grid(x, self.bw_adjust, self.cut, self.clip, self.gridsize)
+        return grid[:, np.newaxis]
 
     def _define_support_bivariate(self, x1, x2, weights):
         """Create a 2D grid of evaluation points."""
-        pass
+        grid1 = self._define_support_grid(x1, self.bw_adjust, self.cut, self.clip[0], self.gridsize)
+        grid2 = self._define_support_grid(x2, self.bw_adjust, self.cut, self.clip[1], self.gridsize)
+        return np.meshgrid(grid1, grid2)
 
     def define_support(self, x1, x2=None, weights=None, cache=True):
         """Create the evaluation grid for a given data set."""
-        pass
+        if x2 is None:
+            support = self._define_support_univariate(x1, weights)
+        else:
+            support = self._define_support_bivariate(x1, x2, weights)
+
+        if cache:
+            self.support = support
+
+        return support
 
     def _fit(self, fit_data, weights=None):
         """Fit the scipy kde while adding bw_adjust logic and version check."""
-        pass
+        from scipy import stats
+        fit_kws = {"bw_method": self.bw_method}
+        if weights is not None:
+            fit_kws["weights"] = weights
+        kde = stats.gaussian_kde(fit_data, **fit_kws)
+        kde.set_bandwidth(kde.factor * self.bw_adjust)
+        return kde
 
     def _eval_univariate(self, x, weights=None):
         """Fit and evaluate a univariate on univariate data."""
-        pass
+        kde = self._fit(x, weights)
+        if self.cumulative:
+            grid, y = self._cumulative_univariate(kde, self.support.flatten())
+        else:
+            grid, y = self.support.flatten(), kde(self.support)
+        return grid, y
 
     def _eval_bivariate(self, x1, x2, weights=None):
         """Fit and evaluate a univariate on bivariate data."""
-        pass
+        kde = self._fit(np.c_[x1, x2].T, weights)
+        if self.cumulative:
+            grid, y = self._cumulative_bivariate(kde, self.support[0], self.support[1])
+        else:
+            grid, y = self.support, kde(self.support)
+        return grid, y
 
     def __call__(self, x1, x2=None, weights=None):
         """Fit and evaluate on univariate or bivariate data."""
@@ -156,19 +191,50 @@ class Histogram:
 
     def _define_bin_edges(self, x, weights, bins, binwidth, binrange, discrete):
         """Inner function that takes bin parameters as arguments."""
-        pass
+        if discrete:
+            edges = np.arange(x.min() - .5, x.max() + 1.5)
+        elif binwidth is not None:
+            start = (x.min() // binwidth) * binwidth
+            end = (x.max() // binwidth + 1) * binwidth
+            edges = np.arange(start, end + binwidth, binwidth)
+        else:
+            edges = np.histogram_bin_edges(x, bins, binrange, weights)
+        return edges
 
     def define_bin_params(self, x1, x2=None, weights=None, cache=True):
         """Given data, return numpy.histogram parameters to define bins."""
-        pass
+        if x2 is None:
+            edges = self._define_bin_edges(x1, weights, self.bins, self.binwidth, self.binrange, self.discrete)
+            bin_kws = dict(bins=edges)
+        else:
+            edges1 = self._define_bin_edges(x1, weights, self.bins, self.binwidth, self.binrange[0], self.discrete[0])
+            edges2 = self._define_bin_edges(x2, weights, self.bins, self.binwidth, self.binrange[1], self.discrete[1])
+            bin_kws = dict(bins=[edges1, edges2])
+        
+        if cache:
+            self.bin_kws = bin_kws
+        
+        return bin_kws
 
     def _eval_bivariate(self, x1, x2, weights):
         """Inner function for histogram of two variables."""
-        pass
+        bin_kws = self.define_bin_params(x1, x2, weights)
+        hist, edges1, edges2 = np.histogram2d(x1, x2, weights=weights, **bin_kws)
+        
+        if self.cumulative:
+            hist = np.cumsum(np.cumsum(hist, axis=0), axis=1)
+        
+        return (edges1, edges2), hist.T
 
     def _eval_univariate(self, x, weights):
         """Inner function for histogram of one variable."""
-        pass
+        bin_kws = self.define_bin_params(x, weights=weights)
+        hist, edges = np.histogram(x, weights=weights, **bin_kws)
+        
+        if self.cumulative:
+            hist = np.cumsum(hist)
+        
+        return edges, hist
 
     def __call__(self, x1, x2=None, weights=None):
         """Count the occurrences in each bin, maybe normalize."""
@@ -197,11 +263,26 @@ class ECDF:
 
     def _eval_bivariate(self, x1, x2, weights):
         """Inner function for ECDF of two variables."""
-        pass
+        raise NotImplementedError("Bivariate ECDF is not implemented.")
 
     def _eval_univariate(self, x, weights):
         """Inner function for ECDF of one variable."""
-        pass
+        sorter = np.argsort(x)
+        x = x[sorter]
+        weights = weights[sorter]
+        
+        cdf = np.cumsum(weights)
+        cdf /= cdf[-1]
+        
+        if self.complementary:
+            cdf = 1 - cdf
+        
+        if self.stat == "count":
+            cdf *= len(x)
+        elif self.stat == "percent":
+            cdf *= 100
+        
+        return x, cdf
 
     def __call__(self, x1, x2=None, weights=None):
         """Return proportion or count of observations below each sorted datapoint."""
@@ -362,8 +443,21 @@ class LetterValues:
 
 def _percentile_interval(data, width):
     """Return a percentile interval from data of a given width."""
-    pass
+    percentiles = 50 - width / 2, 50 + width / 2
+    return np.percentile(data, percentiles)
 
 def _validate_errorbar_arg(arg):
     """Check type and value of errorbar argument and assign default level."""
-    pass
+    if arg is None:
+        return None, None
+    elif isinstance(arg, str):
+        method = arg
+        level = .95
+    elif isinstance(arg, tuple):
+        method, level = arg
+    elif callable(arg):
+        method = arg
+        level = None
+    else:
+        raise ValueError("errorbar must be None, string, (string, number), or callable")
+    return method, level
