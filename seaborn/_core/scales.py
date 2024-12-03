@@ -38,7 +38,9 @@ class Scale:
 
     def _finalize(self, p: Plot, axis: Axis) -> None:
         """Perform scale-specific axis tweaks after adding artists."""
-        pass
+        # This is a base method and doesn't need to do anything by default
+        # Subclasses can override this method to perform specific finalizations
+        return
 
     def __call__(self, data: Series) -> ArrayLike:
         trans_data: Series | NDArray | list
@@ -97,7 +99,9 @@ class Nominal(Scale):
         Copy of self with new tick configuration.
 
         """
-        pass
+        new = self.__class__(**self.__dict__)
+        new._tick_locator = locator
+        return new
 
     def label(self, formatter: Formatter | None=None) -> Nominal:
         """
@@ -118,7 +122,9 @@ class Nominal(Scale):
             Copy of self with new tick configuration.
 
         """
-        pass
+        new = self.__class__(**self.__dict__)
+        new._tick_formatter = formatter
+        return new
 
 @dataclass
 class Ordinal(Scale):
@@ -169,7 +175,25 @@ class Continuous(ContinuousBase):
             Copy of self with new tick configuration.
 
         """
-        pass
+        new = self.__class__(**self.__dict__)
+        if locator is not None:
+            new._tick_locator = locator
+        elif at is not None:
+            new._tick_locator = FixedLocator(at)
+        elif upto is not None:
+            new._tick_locator = MaxNLocator(upto)
+        elif count is not None:
+            new._tick_locator = LinearLocator(count)
+        elif every is not None:
+            new._tick_locator = MultipleLocator(every)
+        
+        if between is not None:
+            new._tick_between = between
+        
+        if minor is not None:
+            new._minor_locator = AutoMinorLocator(minor + 1)
+        
+        return new
 
     def label(self, formatter: Formatter | None=None, *, like: str | Callable | None=None, base: int | None | Default=default, unit: str | None=None) -> Continuous:
         """
@@ -198,7 +222,26 @@ class Continuous(ContinuousBase):
             Copy of self with new label configuration.
 
         """
-        pass
+        new = self.__class__(**self.__dict__)
+        if formatter is not None:
+            new._tick_formatter = formatter
+        elif like is not None:
+            if isinstance(like, str):
+                new._tick_formatter = StrMethodFormatter(like)
+            elif callable(like):
+                new._tick_formatter = FuncFormatter(like)
+        elif base is not None:
+            if base is default:
+                new._tick_formatter = ScalarFormatter()
+            else:
+                new._tick_formatter = LogFormatterSciNotation(base=base)
+        elif unit is not None:
+            if isinstance(unit, tuple):
+                new._tick_formatter = EngFormatter(unit=unit[1], sep=unit[0])
+            else:
+                new._tick_formatter = EngFormatter(unit=unit)
+        
+        return new
 
 @dataclass
 class Temporal(ContinuousBase):
@@ -228,7 +271,12 @@ class Temporal(ContinuousBase):
             Copy of self with new tick configuration.
 
         """
-        pass
+        new = self.__class__(**self.__dict__)
+        if locator is not None:
+            new._tick_locator = locator
+        elif upto is not None:
+            new._tick_locator = AutoDateLocator(maxticks=upto)
+        return new
 
     def label(self, formatter: Formatter | None=None, *, concise: bool=False) -> Temporal:
         """
@@ -251,7 +299,16 @@ class Temporal(ContinuousBase):
             Copy of self with new label configuration.
 
         """
-        pass
+        new = self.__class__(**self.__dict__)
+        if formatter is not None:
+            new._tick_formatter = formatter
+        elif concise:
+            if not hasattr(new, '_tick_locator') or new._tick_locator is None:
+                new._tick_locator = AutoDateLocator()
+            new._tick_formatter = ConciseDateFormatter(new._tick_locator)
+        else:
+            new._tick_formatter = AutoDateFormatter(new._tick_locator)
+        return new
 
 class PseudoAxis:
     """
@@ -276,8 +333,11 @@ class PseudoAxis:
 
     def update_units(self, x):
         """Pass units to the internal converter, potentially updating its mapping."""
-        pass
+        if self.converter is not None:
+            self.converter.update_units(x)
 
     def convert_units(self, x):
         """Return a numeric representation of the input data."""
-        pass
+        if self.converter is not None:
+            return self.converter.convert(x, self.units, self)
+        return x
