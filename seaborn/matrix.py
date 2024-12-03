@@ -19,15 +19,29 @@ __all__ = ['heatmap', 'clustermap']
 
 def _index_to_label(index):
     """Convert a pandas index or multiindex to an axis label."""
-    pass
+    if isinstance(index, pd.MultiIndex):
+        return ", ".join(map(str, index.names))
+    elif isinstance(index, pd.Index):
+        return index.name or ""
+    else:
+        return ""
 
 def _index_to_ticklabels(index):
     """Convert a pandas index or multiindex into ticklabels."""
-    pass
+    if isinstance(index, pd.MultiIndex):
+        return [", ".join(map(str, i)) for i in index.values]
+    else:
+        return index.values
 
 def _convert_colors(colors):
     """Convert either a list of colors or nested lists of colors to RGB."""
-    pass
+    if isinstance(colors, list):
+        if isinstance(colors[0], list):
+            return [list(map(mpl.colors.to_rgb, sublist)) for sublist in colors]
+        else:
+            return list(map(mpl.colors.to_rgb, colors))
+    else:
+        return mpl.colors.to_rgb(colors)
 
 def _matrix_mask(data, mask):
     """Ensure that data and mask are compatible and add missing values.
@@ -38,7 +52,18 @@ def _matrix_mask(data, mask):
     a DataFrame.
 
     """
-    pass
+    if mask is None:
+        mask = np.zeros(data.shape, bool)
+
+    if isinstance(mask, np.ndarray):
+        mask = pd.DataFrame(mask, index=data.index, columns=data.columns)
+
+    mask = mask.reindex_like(data)
+
+    if np.any(mask.isnull()):
+        mask = mask.fillna(True)
+
+    return mask
 
 class _HeatMapper:
     """Draw a heatmap plot of a matrix with nice labels and colormaps."""
