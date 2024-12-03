@@ -79,14 +79,48 @@ def user_cache_dir(appname=None, appauthor=None, version=None, opinion=True):
     OPINION: This function appends "Cache" to the `CSIDL_LOCAL_APPDATA` value.
     This can be disabled with the `opinion=False` option.
     """
-    pass
+    if system == "win32":
+        if appauthor is None:
+            appauthor = appname
+        path = os.path.normpath(_get_win_folder("CSIDL_LOCAL_APPDATA"))
+        if appname:
+            if appauthor is not False:
+                path = os.path.join(path, appauthor, appname)
+            else:
+                path = os.path.join(path, appname)
+            if opinion:
+                path = os.path.join(path, "Cache")
+    elif system == "darwin":
+        path = os.path.expanduser("~/Library/Caches")
+        if appname:
+            path = os.path.join(path, appname)
+    else:
+        path = os.getenv("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
+        if appname:
+            path = os.path.join(path, appname)
+    if appname and version:
+        path = os.path.join(path, version)
+    return path
 
 def _get_win_folder_from_registry(csidl_name):
     """This is a fallback technique at best. I'm not sure if using the
     registry for this guarantees us the correct answer for all CSIDL_*
     names.
     """
-    pass
+    import winreg as _winreg
+
+    shell_folder_name = {
+        "CSIDL_APPDATA": "AppData",
+        "CSIDL_COMMON_APPDATA": "Common AppData",
+        "CSIDL_LOCAL_APPDATA": "Local AppData",
+    }[csidl_name]
+
+    key = _winreg.OpenKey(
+        _winreg.HKEY_CURRENT_USER,
+        r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
+    )
+    dir, type = _winreg.QueryValueEx(key, shell_folder_name)
+    return dir
 if system == 'win32':
     try:
         import win32com.shell
