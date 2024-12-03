@@ -43,11 +43,25 @@ class GroupBy:
 
     def _get_groups(self, data: DataFrame) -> tuple[str | list[str], Index | MultiIndex]:
         """Return index with Cartesian product of ordered grouping variable levels."""
-        pass
+        grouping_vars = [var for var in self.order if var in data.columns]
+        if not grouping_vars:
+            raise ValueError("No grouping variables found in the data")
+
+        levels = []
+        for var in grouping_vars:
+            if self.order[var] is None:
+                levels.append(categorical_order(data[var]))
+            else:
+                levels.append([val for val in self.order[var] if val in data[var].unique()])
+
+        index = pd.MultiIndex.from_product(levels, names=grouping_vars)
+        return grouping_vars, index
 
     def _reorder_columns(self, res, data):
         """Reorder result columns to match original order with new columns appended."""
-        pass
+        original_cols = data.columns.tolist()
+        new_cols = [col for col in res.columns if col not in original_cols]
+        return res[original_cols + new_cols]
 
     def agg(self, data: DataFrame, *args, **kwargs) -> DataFrame:
         """
@@ -58,8 +72,31 @@ class GroupBy:
         those combinations do not appear in the dataset.
 
         """
-        pass
+        grouping_vars, index = self._get_groups(data)
+        grouped = data.groupby(grouping_vars)
+        res = grouped.agg(*args, **kwargs)
+        
+        # Reindex to include all combinations
+        res = res.reindex(index)
+        
+        # Reorder columns
+        res = self._reorder_columns(res, data)
+        
+        return res
 
     def apply(self, data: DataFrame, func: Callable[..., DataFrame], *args, **kwargs) -> DataFrame:
         """Apply a DataFrame -> DataFrame mapping to each group."""
-        pass
+        grouping_vars, index = self._get_groups(data)
+        grouped = data.groupby(grouping_vars)
+        res = grouped.apply(func, *args, **kwargs)
+        
+        # Reset index to avoid duplicate index levels
+        res = res.reset_index(level=list(range(len(grouping_vars))), drop=True)
+        
+        # Reindex to include all combinations
+        res = res.reindex(index)
+        
+        # Reorder columns
+        res = self._reorder_columns(res, data)
+        
+        return res
