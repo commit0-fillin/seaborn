@@ -22,17 +22,22 @@ class _BaseGrid:
 
     def set(self, **kwargs):
         """Set attributes on each subplot Axes."""
-        pass
+        for ax in self.axes.flat:
+            if ax is not None:
+                ax.set(**kwargs)
+        return self
 
     @property
     def fig(self):
         """DEPRECATED: prefer the `figure` property."""
-        pass
+        import warnings
+        warnings.warn("The `fig` property is deprecated. Use `figure` instead.", DeprecationWarning)
+        return self.figure
 
     @property
     def figure(self):
         """Access the :class:`matplotlib.figure.Figure` object underlying the grid."""
-        pass
+        return self._figure
 
     def apply(self, func, *args, **kwargs):
         """
@@ -46,7 +51,8 @@ class _BaseGrid:
         Added in v0.12.0.
 
         """
-        pass
+        func(self, *args, **kwargs)
+        return self
 
     def pipe(self, func, *args, **kwargs):
         """
@@ -60,7 +66,7 @@ class _BaseGrid:
         Added in v0.12.0.
 
         """
-        pass
+        return func(self, *args, **kwargs)
 
     def savefig(self, *args, **kwargs):
         """
@@ -70,7 +76,8 @@ class _BaseGrid:
         by default. Parameters are passed through to the matplotlib function.
 
         """
-        pass
+        kwargs.setdefault("bbox_inches", "tight")
+        self.figure.savefig(*args, **kwargs)
 
 class Grid(_BaseGrid):
     """A grid that can have multiple subplots and an external legend."""
