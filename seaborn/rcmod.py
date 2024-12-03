@@ -43,7 +43,21 @@ def set_theme(context='notebook', style='darkgrid', palette='deep', font='sans-s
     .. include:: ../docstrings/set_theme.rst
 
     """
-    pass
+    # Set the context
+    set_context(context, font_scale)
+    
+    # Set the style
+    set_style(style, rc)
+    
+    # Set the color palette
+    set_palette(palette, color_codes=color_codes)
+    
+    # Set the font
+    mpl.rcParams['font.family'] = font
+    
+    # Override with any additional rc parameters
+    if rc is not None:
+        mpl.rcParams.update(rc)
 
 def set(*args, **kwargs):
     """
@@ -51,15 +65,15 @@ def set(*args, **kwargs):
 
     This function may be removed in the future.
     """
-    pass
+    return set_theme(*args, **kwargs)
 
 def reset_defaults():
     """Restore all RC params to default settings."""
-    pass
+    mpl.rcParams.update(mpl.rcParamsDefault)
 
 def reset_orig():
     """Restore all RC params to original settings (respects custom rc)."""
-    pass
+    mpl.rcParams.update(mpl.rcParamsOrig)
 
 def axes_style(style=None, rc=None):
     """
@@ -91,7 +105,20 @@ def axes_style(style=None, rc=None):
     .. include:: ../docstrings/axes_style.rst
 
     """
-    pass
+    if style is None:
+        style_dict = {k: mpl.rcParams[k] for k in _style_keys}
+    elif isinstance(style, dict):
+        style_dict = style
+    else:
+        styles = ['darkgrid', 'whitegrid', 'dark', 'white', 'ticks']
+        if style not in styles:
+            raise ValueError(f"style must be one of {', '.join(styles)}")
+        style_dict = _style_dicts[style]
+
+    if rc is not None:
+        style_dict.update(rc)
+
+    return _AxesStyle(style_dict)
 
 def set_style(style=None, rc=None):
     """
@@ -121,7 +148,8 @@ def set_style(style=None, rc=None):
     .. include:: ../docstrings/set_style.rst
 
     """
-    pass
+    style_dict = axes_style(style, rc)
+    mpl.rcParams.update(style_dict)
 
 def plotting_context(context=None, font_scale=1, rc=None):
     """
@@ -157,7 +185,25 @@ def plotting_context(context=None, font_scale=1, rc=None):
     .. include:: ../docstrings/plotting_context.rst
 
     """
-    pass
+    if context is None:
+        context_dict = {k: mpl.rcParams[k] for k in _context_keys}
+    elif isinstance(context, dict):
+        context_dict = context
+    else:
+        contexts = ['paper', 'notebook', 'talk', 'poster']
+        if context not in contexts:
+            raise ValueError(f"context must be one of {', '.join(contexts)}")
+        context_dict = _context_dicts[context]
+
+    # Scale font sizes
+    font_keys = [k for k in _context_keys if "font.size" in k or "fontsize" in k]
+    for k in font_keys:
+        context_dict[k] = context_dict[k] * font_scale
+
+    if rc is not None:
+        context_dict.update(rc)
+
+    return _PlottingContext(context_dict)
 
 def set_context(context=None, font_scale=1, rc=None):
     """
@@ -192,7 +238,8 @@ def set_context(context=None, font_scale=1, rc=None):
     .. include:: ../docstrings/set_context.rst
 
     """
-    pass
+    context_dict = plotting_context(context, font_scale, rc)
+    mpl.rcParams.update(context_dict)
 
 class _RCAesthetics(dict):
 
@@ -247,4 +294,10 @@ def set_palette(palette, n_colors=None, desat=None, color_codes=False):
     set_style : set the default parameters for figure style
 
     """
-    pass
+    from .palettes import color_palette
+    colors = color_palette(palette, n_colors, desat)
+    mpl.rcParams["axes.prop_cycle"] = cycler(color=colors)
+    
+    if color_codes:
+        from .palettes import set_color_codes
+        set_color_codes(palette)
