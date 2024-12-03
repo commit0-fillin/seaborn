@@ -65,7 +65,12 @@ class PairSpec(TypedDict, total=False):
 @contextmanager
 def theme_context(params: dict[str, Any]) -> Generator:
     """Temporarily modify specifc matplotlib rcParams."""
-    pass
+    original_params = {k: mpl.rcParams[k] for k in params}
+    mpl.rcParams.update(params)
+    try:
+        yield
+    finally:
+        mpl.rcParams.update(original_params)
 
 def build_plot_signature(cls):
     """
@@ -76,7 +81,18 @@ def build_plot_signature(cls):
     at which point dynamic signature generation would become more important.
 
     """
-    pass
+    def wrapper(cls):
+        params = [
+            inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+            inspect.Parameter("data", inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None),
+            *[
+                inspect.Parameter(prop, inspect.Parameter.KEYWORD_ONLY, default=None)
+                for prop in PROPERTIES
+            ],
+        ]
+        cls.__signature__ = inspect.Signature(params)
+        return cls
+    return wrapper
 
 class ThemeConfig(mpl.RcParams):
     """
@@ -90,15 +106,24 @@ class ThemeConfig(mpl.RcParams):
 
     def reset(self) -> None:
         """Update the theme dictionary with seaborn's default values."""
-        pass
+        with axes_style("darkgrid") as style, plotting_context("notebook") as context:
+            self.clear()
+            self.update(style)
+            self.update(context)
 
     def update(self, other: dict[str, Any] | None=None, /, **kwds):
         """Update the theme with a dictionary or keyword arguments of rc parameters."""
-        pass
+        if other is not None:
+            kwds.update(other)
+        filtered = self._filter_params(kwds)
+        super().update(filtered)
 
     def _filter_params(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Restruct to thematic rc params."""
-        pass
+        """Restrict to thematic rc params."""
+        return {
+            k: v for k, v in params.items()
+            if any(k.startswith(group) for group in self.THEME_GROUPS)
+        }
 
 class DisplayConfig(TypedDict):
     """Configuration for IPython's rich display hooks."""
@@ -122,7 +147,7 @@ class PlotConfig:
         https://matplotlib.org/stable/tutorials/introductory/customizing.html
 
         """
-        pass
+        return dict(self._theme)
 
     @property
     def display(self) -> DisplayConfig:
@@ -136,7 +161,7 @@ class PlotConfig:
         - hidpi (bool): When True, double the DPI while preserving the size
 
         """
-        pass
+        return self._display.copy()
 
 @build_plot_signature
 class Plot:
@@ -210,7 +235,25 @@ class Plot:
 
     def _resolve_positionals(self, args: tuple[DataSource | VariableSpec, ...], data: DataSource, variables: dict[str, VariableSpec]) -> tuple[DataSource, dict[str, VariableSpec]]:
         """Handle positional arguments, which may contain data / x / y."""
-        pass
+        if not args:
+            return data, variables
+
+        if isinstance(args[0], (pd.DataFrame, dict)):
+            data = args[0]
+            args = args[1:]
+
+        if args:
+            if "x" not in variables:
+                variables["x"] = args[0]
+                args = args[1:]
+            if args and "y" not in variables:
+                variables["y"] = args[0]
+                args = args[1:]
+
+        if args:
+            raise TypeError(f"Plot() got unexpected positional arguments: {args}")
+
+        return data, variables
 
     def __add__(self, other):
         if isinstance(other, Mark) or isinstance(other, Stat):
@@ -220,7 +263,21 @@ class Plot:
 
     def _clone(self) -> Plot:
         """Generate a new object with the same information as the current spec."""
-        pass
+        new = Plot()
+        new._data = self._data.copy()
+        new._layers = self._layers.copy()
+        new._scales = self._scales.copy()
+        new._shares = self._shares.copy()
+        new._limits = self._limits.copy()
+        new._labels = self._labels.copy()
+        new._theme = self._theme.copy()
+        new._facet_spec = self._facet_spec.copy()
+        new._pair_spec = self._pair_spec.copy()
+        new._figure_spec = self._figure_spec.copy()
+        new._subplot_spec = self._subplot_spec.copy()
+        new._layout_spec = self._layout_spec.copy()
+        new._target = self._target
+        return new
 
     def on(self, target: Axes | SubFigure | Figure) -> Plot:
         """
@@ -244,7 +301,9 @@ class Plot:
         .. include:: ../docstrings/objects.Plot.on.rst
 
         """
-        pass
+        new = self._clone()
+        new._target = target
+        return new
 
     def add(self, mark: Mark, *transforms: Stat | Move, orient: str | None=None, legend: bool=True, label: str | None=None, data: DataSource=None, **variables: VariableSpec) -> Plot:
         """
