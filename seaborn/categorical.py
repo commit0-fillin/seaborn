@@ -64,64 +64,211 @@ class _CategoricalPlotter(VectorPlotter):
         It can be removed after completion of the work.
 
         """
-        pass
+        if force_hue or (palette is not None and self.hue_names is None):
+            if isinstance(palette, dict):
+                hue_order = sorted(palette)
+            elif isinstance(palette, list):
+                hue_order = palette
+            elif isinstance(palette, str) and palette in SEABORN_PALETTES:
+                hue_order = SEABORN_PALETTES[palette]
+            
+            if hue_order is not None:
+                self.hue_names = hue_order
+                self.n_colors = len(hue_order)
+            
+            if color is not None:
+                self.colors = [color] * self.n_colors
+            elif isinstance(palette, dict):
+                self.colors = [palette[h] for h in hue_order]
+            else:
+                self.colors = color_palette(palette, self.n_colors)
+        
+        return color, palette, hue_order
 
     def _palette_without_hue_backcompat(self, palette, hue_order):
         """Provide one cycle where palette= implies hue= when not provided"""
-        pass
+        if palette is not None and self.hue_names is None:
+            if isinstance(palette, dict):
+                hue_order = sorted(palette)
+            elif isinstance(palette, list):
+                hue_order = palette
+            elif isinstance(palette, str) and palette in SEABORN_PALETTES:
+                hue_order = SEABORN_PALETTES[palette]
+            
+            if hue_order is not None:
+                self.hue_names = hue_order
+                self.n_colors = len(hue_order)
+            
+            if isinstance(palette, dict):
+                self.colors = [palette[h] for h in hue_order]
+            else:
+                self.colors = color_palette(palette, self.n_colors)
+        
+        return palette, hue_order
 
     def _point_kwargs_backcompat(self, scale, join, kwargs):
         """Provide two cycles where scale= and join= work, but redirect to kwargs."""
-        pass
+        if scale is not None:
+            kwargs.setdefault('scale', scale)
+            warnings.warn("The `scale` parameter is deprecated. Use `kwargs={'scale': ...}` instead.",
+                          FutureWarning)
+        
+        if join is not None:
+            kwargs.setdefault('join', join)
+            warnings.warn("The `join` parameter is deprecated. Use `kwargs={'join': ...}` instead.",
+                          FutureWarning)
+        
+        return kwargs
 
     def _err_kws_backcompat(self, err_kws, errcolor, errwidth, capsize):
         """Provide two cycles where existing signature-level err_kws are handled."""
-        pass
+        err_kws = {} if err_kws is None else err_kws.copy()
+        
+        if errcolor is not None:
+            err_kws.setdefault('color', errcolor)
+            warnings.warn("The `errcolor` parameter is deprecated. Use `err_kws={'color': ...}` instead.",
+                          FutureWarning)
+        
+        if errwidth is not None:
+            err_kws.setdefault('linewidth', errwidth)
+            warnings.warn("The `errwidth` parameter is deprecated. Use `err_kws={'linewidth': ...}` instead.",
+                          FutureWarning)
+        
+        if capsize is not None:
+            err_kws.setdefault('capsize', capsize)
+            warnings.warn("The `capsize` parameter is deprecated. Use `err_kws={'capsize': ...}` instead.",
+                          FutureWarning)
+        
+        return err_kws
 
     def _violin_scale_backcompat(self, scale, scale_hue, density_norm, common_norm):
         """Provide two cycles of backcompat for scale kwargs"""
-        pass
+        if scale is not None:
+            density_norm = scale
+            warnings.warn("The `scale` parameter is deprecated. Use `density_norm` instead.",
+                          FutureWarning)
+        
+        if scale_hue is not None:
+            common_norm = not scale_hue
+            warnings.warn("The `scale_hue` parameter is deprecated. Use `common_norm` instead.",
+                          FutureWarning)
+        
+        return density_norm, common_norm
 
     def _violin_bw_backcompat(self, bw, bw_method):
         """Provide two cycles of backcompat for violin bandwidth parameterization."""
-        pass
+        if bw is not None:
+            if isinstance(bw, str):
+                bw_method = bw
+            else:
+                bw_method = "scott" if bw == "scott" else bw
+            warnings.warn("The `bw` parameter is deprecated. Use `bw_method` instead.",
+                          FutureWarning)
+        
+        return bw_method
 
     def _boxen_scale_backcompat(self, scale, width_method):
         """Provide two cycles of backcompat for scale kwargs"""
-        pass
+        if scale is not None:
+            width_method = scale
+            warnings.warn("The `scale` parameter is deprecated. Use `width_method` instead.",
+                          FutureWarning)
+        
+        return width_method
 
     def _complement_color(self, color, base_color, hue_map):
         """Allow a color to be set automatically using a basis of comparison."""
-        pass
+        if color is None:
+            if base_color is None:
+                color = "C0"
+            else:
+                color = set(hue_map.values()).difference({base_color}).pop()
+        return color
 
     def _map_prop_with_hue(self, name, value, fallback, plot_kws):
         """Support pointplot behavior of modifying the marker/linestyle with hue."""
-        pass
+        if value is None:
+            if self.hue_names is None:
+                value = fallback
+            else:
+                value = [fallback] * len(self.hue_names)
+        
+        if isinstance(value, list):
+            if len(value) != len(self.hue_names):
+                raise ValueError(f"The `{name}` list must have {len(self.hue_names)} elements")
+            plot_kws[name] = value[0]
+        else:
+            plot_kws[name] = value
+        
+        return value
 
     def _adjust_cat_axis(self, ax, axis):
         """Set ticks and limits for a categorical variable."""
-        pass
+        if axis == "x":
+            ax.xaxis.grid(False)
+            ax.set_xlim(-.5, len(self.plot_data[axis]) - .5, auto=None)
+            ax.set_xticks(range(len(self.plot_data[axis])))
+            ax.set_xticklabels(self.plot_data[axis])
+        else:
+            ax.yaxis.grid(False)
+            ax.set_ylim(-.5, len(self.plot_data[axis]) - .5, auto=None)
+            ax.set_yticks(range(len(self.plot_data[axis])))
+            ax.set_yticklabels(self.plot_data[axis])
 
     def _dodge_needed(self):
         """Return True when use of `hue` would cause overlaps."""
-        pass
+        return self.hue_names is not None and self.dodge
 
     def _dodge(self, keys, data):
         """Apply a dodge transform to coordinates in place."""
-        pass
+        if not self._dodge_needed():
+            return
+
+        n_levels = len(self.hue_names)
+        if self.dodge == "auto":
+            dodge_width = .8 / n_levels
+        else:
+            dodge_width = self.dodge
+
+        offsets = np.linspace(0, dodge_width, n_levels + 1)[:-1]
+        offsets -= offsets.mean()
+
+        for key in keys:
+            data[key] = data[key] + offsets[data["_hue_order"]]
 
     def _invert_scale(self, ax, data, vars=('x', 'y')):
         """Undo scaling after computation so data are plotted correctly."""
-        pass
+        for var in vars:
+            if var in data:
+                scale = getattr(ax, f'get_{var}scale')()
+                if scale == 'log':
+                    data[var] = np.power(10, data[var])
+                elif scale == 'symlog':
+                    data[var] = np.sign(data[var]) * np.power(10, np.abs(data[var]))
 
     @property
     def _native_width(self):
         """Return unit of width separating categories on native numeric scale."""
-        pass
+        if self.orient == "x":
+            return np.diff(self.ax.get_xticks()).min()
+        else:
+            return np.diff(self.ax.get_yticks()).min()
 
     def _nested_offsets(self, width, dodge):
         """Return offsets for each hue level for dodged plots."""
-        pass
+        if not self._dodge_needed():
+            return [0]
+
+        n_levels = len(self.hue_names)
+        if dodge == "auto":
+            dodge_width = width * .8 / n_levels
+        else:
+            dodge_width = dodge * width
+
+        offsets = np.linspace(0, dodge_width, n_levels)
+        offsets -= offsets.mean()
+
+        return offsets
 
 class _CategoricalAggPlotter(_CategoricalPlotter):
     flat_structure = {'x': '@index', 'y': '@values'}
