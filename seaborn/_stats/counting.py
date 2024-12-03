@@ -106,11 +106,40 @@ class Hist(Stat):
 
     def _define_bin_edges(self, vals, weight, bins, binwidth, binrange, discrete):
         """Inner function that takes bin parameters as arguments."""
-        pass
+        import numpy as np
+
+        if discrete:
+            if binrange is None:
+                start, stop = int(vals.min() - 0.5), int(vals.max() + 1.5)
+            else:
+                start, stop = binrange
+            bins = np.arange(start, stop)
+        elif binwidth is not None:
+            if binrange is None:
+                start, stop = vals.min(), vals.max()
+            else:
+                start, stop = binrange
+            bins = np.arange(start, stop + binwidth, binwidth)
+        elif np.isscalar(bins):
+            bins = np.histogram_bin_edges(vals, bins, binrange, weights=weight)
+        
+        return bins
 
     def _define_bin_params(self, data, orient, scale_type):
         """Given data, return numpy.histogram parameters to define bins."""
-        pass
+        vals = data[orient]
+        weight = data.get(self.stat, None)
+
+        if scale_type == "temporal":
+            vals = vals.astype(float)
+
+        discrete = self.discrete or scale_type in ["nominal", "ordinal"]
+        
+        bins = self._define_bin_edges(
+            vals, weight, self.bins, self.binwidth, self.binrange, discrete
+        )
+
+        return dict(bins=bins, range=self.binrange, weights=weight)
 
     def __call__(self, data: DataFrame, groupby: GroupBy, orient: str, scales: dict[str, Scale]) -> DataFrame:
         scale_type = scales[orient].__class__.__name__.lower()
