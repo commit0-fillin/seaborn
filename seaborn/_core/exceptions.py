@@ -23,4 +23,7 @@ class PlotSpecError(RuntimeError):
         """
         Initialize the class to report the failure of a specific operation.
         """
-        pass
+        message = f"Error occurred during {step}"
+        if var:
+            message += f" for variable '{var}'"
+        return cls(message)
