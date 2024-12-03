@@ -36,15 +36,34 @@ def ci_to_errsize(cis, heights):
         format as argument for plt.bar
 
     """
-    pass
+    cis = np.asarray(cis)
+    heights = np.asarray(heights)
+    errsize = []
+    for i, (low, high) in enumerate(np.transpose(cis)):
+        h = heights[i]
+        errsize.append([h - low, high - h])
+    return np.transpose(errsize)
 
 def _draw_figure(fig):
     """Force draw of a matplotlib figure, accounting for back-compat."""
-    pass
+    if hasattr(fig.canvas, "draw_idle"):
+        fig.canvas.draw_idle()
+    else:
+        fig.canvas.draw()
 
 def _default_color(method, hue, color, kws, saturation=1):
     """If needed, get a default color by using the matplotlib property cycle."""
-    pass
+    if color is not None:
+        return color
+    elif hue is not None:
+        return None
+    elif method.__name__.startswith("scatter"):
+        return plt.rcParams["patch.facecolor"]
+    else:
+        color = next(plt.gca()._get_lines.prop_cycler)["color"]
+        if saturation < 1:
+            color = desaturate(color, saturation)
+        return color
 
 def desaturate(color, prop):
     """Decrease the saturation channel of a color by some percent.
@@ -62,7 +81,11 @@ def desaturate(color, prop):
         desaturated color code in RGB tuple representation
 
     """
-    pass
+    import matplotlib.colors as mplcol
+    rgb = mplcol.to_rgb(color)
+    hsv = mplcol.rgb_to_hsv(rgb)
+    hsv[1] = hsv[1] * prop
+    return mplcol.hsv_to_rgb(hsv)
 
 def saturate(color):
     """Return a fully saturated color with the same hue.
@@ -78,7 +101,11 @@ def saturate(color):
         saturated color code in RGB tuple representation
 
     """
-    pass
+    import matplotlib.colors as mplcol
+    rgb = mplcol.to_rgb(color)
+    hsv = mplcol.rgb_to_hsv(rgb)
+    hsv[1] = 1.0
+    return mplcol.hsv_to_rgb(hsv)
 
 def set_hls_values(color, h=None, l=None, s=None):
     """Independently manipulate the h, l, or s channels of a color.
@@ -96,7 +123,16 @@ def set_hls_values(color, h=None, l=None, s=None):
         new color code in RGB tuple representation
 
     """
-    pass
+    import matplotlib.colors as mplcol
+    rgb = mplcol.to_rgb(color)
+    hls = list(mplcol.rgb_to_hls(*rgb))
+    if h is not None:
+        hls[0] = h
+    if l is not None:
+        hls[1] = l
+    if s is not None:
+        hls[2] = s
+    return mplcol.hls_to_rgb(*hls)
 
 def axlabel(xlabel, ylabel, **kwargs):
     """Grab current axis and label it.
@@ -104,7 +140,13 @@ def axlabel(xlabel, ylabel, **kwargs):
     DEPRECATED: will be removed in a future version.
 
     """
-    pass
+    import warnings
+    warnings.warn("axlabel is deprecated and will be removed in a future version. "
+                  "Use ax.set(xlabel=..., ylabel=...) instead.",
+                  FutureWarning)
+    ax = plt.gca()
+    ax.set_xlabel(xlabel, **kwargs)
+    ax.set_ylabel(ylabel, **kwargs)
 
 def remove_na(vector):
     """Helper method for removing null values from data vectors.
@@ -120,7 +162,7 @@ def remove_na(vector):
         Vector of data with null values removed. May be a copy or a view.
 
     """
-    pass
+    return vector[pd.notnull(vector)]
 
 def get_color_cycle():
     """Return the list of colors in the current matplotlib color cycle
@@ -135,7 +177,11 @@ def get_color_cycle():
         List of matplotlib colors in the current cycle, or dark gray if
         the current color cycle is empty.
     """
-    pass
+    from matplotlib import rcParams
+    colors = rcParams.get('axes.prop_cycle', rcParams.get('axes.color_cycle', ['#333333']))
+    if isinstance(colors, cycler):
+        colors = [c['color'] for c in colors]
+    return colors
 
 def despine(fig=None, ax=None, top=True, right=True, left=False, bottom=False, offset=None, trim=False):
     """Remove the top and right spines from plot(s).
