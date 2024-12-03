@@ -17,11 +17,25 @@ class Stat:
 
     def _check_param_one_of(self, param: str, options: Iterable[Any]) -> None:
         """Raise when parameter value is not one of a specified set."""
-        pass
+        value = getattr(self, param)
+        if value not in options:
+            raise ValueError(f"The `{param}` parameter must be one of {options}, not {value}.")
 
     def _check_grouping_vars(self, param: str, data_vars: list[str], stacklevel: int=2) -> None:
         """Warn if vars are named in parameter without being present in the data."""
-        pass
+        value = getattr(self, param)
+        if value is None:
+            return
+        if isinstance(value, str):
+            value = [value]
+        missing = set(value) - set(data_vars)
+        if missing:
+            warnings.warn(
+                f"The following variable(s) are not present in the data: {', '.join(missing)}. "
+                f"They will be ignored in the `{param}` parameter.",
+                UserWarning,
+                stacklevel=stacklevel + 1
+            )
 
     def __call__(self, data: DataFrame, groupby: GroupBy, orient: str, scales: dict[str, Scale]) -> DataFrame:
         """Apply statistical transform to data subgroups and return combined result."""
