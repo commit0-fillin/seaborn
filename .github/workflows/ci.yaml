@@ -90,7 +90,7 @@ jobs:
         run: make test
 
       - name: Upload coverage
-        uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d # v3.1.4
+        uses: codecov/codecov-action@1e68e06f1dbfde0e4cefc87efeba9e4643565303 # v5.1.2
         if: ${{ success() }}
 
   lint:
